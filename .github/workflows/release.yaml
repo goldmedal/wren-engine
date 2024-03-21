@@ -12,6 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Git
+        run: |
+          git config --global user.email "liugs963@gmail.com"
+          git config --global user.name "goldmedal"
       - name: Maven Prepare Release
         id: maven_prepare_release
         run: |
@@ -22,6 +26,7 @@ jobs:
             version_number=$(./mvnw --quiet help:evaluate -Dexpression=project.version -DforceStdout | sed -n 's/^\(.*\)-SNAPSHOT/\1/p')
             ./mvnw release:prepare -B -DreleaseVersion=${version_number}
           fi
+          git push
           git push origin $version_number
           echo "version_number=$version_number" >> $GITHUB_OUTPUT
       - name: Set up JDK 11
