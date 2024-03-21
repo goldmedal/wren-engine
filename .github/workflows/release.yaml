@@ -18,6 +18,8 @@ jobs:
           git config --global user.name "goldmedal"
       - name: Maven Prepare Release
         id: maven_prepare_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           if [ -n "${{ github.event.inputs.specific_version }}" ]; then
             version_number=${{ github.event.inputs.specific_version }}
