@@ -12,14 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        token: ${{ secrets.GHCR_TOKEN }}
       - name: Set up Git
         run: |
           git config --global user.email "liugs963@gmail.com"
           git config --global user.name "goldmedal"
       - name: Maven Prepare Release
         id: maven_prepare_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           if [ -n "${{ github.event.inputs.specific_version }}" ]; then
             version_number=${{ github.event.inputs.specific_version }}
