@@ -23,7 +23,7 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.specific_version }}" ]; then
             version_number=${{ github.event.inputs.specific_version }}
-            ./mvnw release:prepare -B -DreleaseVersion=${{ steps.prepare_version.outputs.specific_version }}
+            ./mvnw release:prepare -B -DreleaseVersion=${{ github.event.inputs.specific_version }}
           else
             version_number=$(./mvnw --quiet help:evaluate -Dexpression=project.version -DforceStdout | sed -n 's/^\(.*\)-SNAPSHOT/\1/p')
             ./mvnw release:prepare -B -DreleaseVersion=${version_number}
