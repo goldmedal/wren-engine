@@ -5,7 +5,7 @@ on:
     inputs:
       specific_version:
         type: string
-        description: Specific version number (Optional)
+        description: Specific version number (Optional). Default will be the current version plus 0.0.1.
 
 jobs:
   prepare-release:
