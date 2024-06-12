@@ -87,10 +87,11 @@ impl ModelAnalyzeRule {
                 let table_name = table_scan.table_name.table();
                 if let Some(model) = self.analyzed_wren_mdl.wren_mdl.get_model(table_name)
                 {
+                    let field: Vec<Expr> = used_columns.borrow().iter().cloned().collect();
                     let model = LogicalPlan::Extension(Extension {
                         node: Arc::new(ModelPlanNode::new(
                             model,
-                            used_columns.borrow().iter().cloned().collect(),
+                            field,
                             Some(LogicalPlan::TableScan(table_scan.clone())),
                             Arc::clone(&self.analyzed_wren_mdl),
                         )),
@@ -217,6 +218,11 @@ impl ModelPlanNode {
         let mut directed_graph: Graph<Dataset, DatasetLink> = Graph::new();
         let mut model_required_fields: HashMap<TableReference, BTreeSet<Column>> =
             HashMap::new();
+        let model_ref = TableReference::full(
+            analyzed_wren_mdl.wren_mdl.catalog(),
+            analyzed_wren_mdl.wren_mdl.schema(),
+            model.name(),
+        );
         let fields = model
             .get_physical_columns()
             .iter()
@@ -296,9 +302,17 @@ impl ModelPlanNode {
                         );
                         expr.alias(column.name.clone())
                     } else {
-                        col(column.name.clone())
+                        Expr::Column(from_qualified_name(
+                            &analyzed_wren_mdl.wren_mdl,
+                            model.name(),
+                            column.name()))
                     };
                     required_exprs_buffer.insert(OrdExpr::new(expr_plan));
+                    model_required_fields.entry(model_ref.clone()).or_default().insert(from_qualified_name(
+                        &analyzed_wren_mdl.wren_mdl,
+                        model.name(),
+                        column.name(),
+                    ));
                 }
                 (
                     Some(TableReference::full(
@@ -339,7 +353,7 @@ impl ModelPlanNode {
                         analyzed_wren_mdl.wren_mdl.schema(),
                         model.name(),
                     );
-                    let required_filed = model_required_fields
+                    let required_filed: Vec<Expr> = model_required_fields
                         .get(&model_ref)
                         .unwrap_or_else(|| {
                             panic!("Required fields not found {}", model.name())
@@ -400,6 +414,8 @@ impl ModelPlanNode {
                 unimplemented!("Only support model as target dataset")
             }
         }
+
+        dbg!(model_required_fields.clone());
 
         Self {
             model_name: model.name.clone(),
@@ -472,23 +488,17 @@ enum RelationChain {
 }
 
 impl RelationChain {
-    fn plan(&mut self, rule: ModelGenerationRule) -> (Option<LogicalPlan>, Option<Expr>) {
+    fn plan(&mut self, rule: ModelGenerationRule) -> Option<LogicalPlan> {
         match self {
             RelationChain::Chain(plan, _, condition, ref mut next) => {
                 if let Nil = **next {
-                    let join_keys: Vec<Expr> = mdl::utils::collect_identifiers(condition)
-                        .iter()
-                        .cloned()
-                        .map(|c| col(c.flat_name()))
-                        .collect();
-                    let join_condition = join_keys[0].clone().eq(join_keys[1].clone());
                     let left = rule
                         .generate_model_internal(LogicalPlan::Extension(Extension {
                             node: Arc::new(plan.to_owned()),
                         }))
                         .unwrap()
                         .data;
-                    (Some(left), Some(join_condition))
+                    Some(left)
                 } else {
                     let left = rule
                         .generate_model_internal(LogicalPlan::Extension(Extension {
@@ -502,26 +512,30 @@ impl RelationChain {
                         .map(|c| col(c.flat_name()))
                         .collect();
                     let join_condition = join_keys[0].clone().eq(join_keys[1].clone());
-                    let (Some(next_plan), _) = next.plan(rule) else {
+                    let Some(next_plan)= next.plan(rule) else {
                         panic!("Nil relation chain")
                     };
-                    (
-                        Some(
-                            LogicalPlanBuilder::from(left)
-                                .join_on(
-                                    next_plan,
-                                    datafusion::logical_expr::JoinType::Left,
-                                    vec![join_condition],
-                                )
-                                .unwrap()
-                                .build()
-                                .unwrap(),
-                        ),
-                        None,
+                    let required_field: Vec<Expr> = plan.required_exprs
+                        .iter()
+                        .map(|expr| expr.clone())
+                        .collect();
+
+                    Some(
+                        LogicalPlanBuilder::from(left)
+                            .join_on(
+                                next_plan,
+                                datafusion::logical_expr::JoinType::Left,
+                                vec![join_condition],
+                            )
+                            .unwrap()
+                            .project(required_field)
+                            .unwrap()
+                            .build()
+                            .unwrap(),
                     )
                 }
             }
-            _ => (None, None),
+            _ => None,
         }
     }
 }
@@ -595,7 +609,11 @@ impl ModelGenerationRule {
                     let table_scan = match &model_plan.original_table_scan {
                         Some(LogicalPlan::TableScan(original_scan)) => {
                             LogicalPlanBuilder::scan_with_filters(
-                                model.name.clone(),
+                                TableReference::full(
+                                    self.analyzed_wren_mdl.wren_mdl.catalog(),
+                                    self.analyzed_wren_mdl.wren_mdl.schema(),
+                                    model.name(),
+                                ),
                                 create_remote_table_source(
                                     &model,
                                     &self.analyzed_wren_mdl.wren_mdl,
@@ -611,7 +629,10 @@ impl ModelGenerationRule {
                                 .to_string(),
                         )),
                         None => LogicalPlanBuilder::scan(
-                            model.name.clone(),
+                            TableReference::full(
+                                self.analyzed_wren_mdl.wren_mdl.catalog(),
+                                self.analyzed_wren_mdl.wren_mdl.schema(),
+                                model.name()),
                             create_remote_table_source(&model, &self.analyzed_wren_mdl.wren_mdl),
                             None,
                         )
@@ -625,7 +646,7 @@ impl ModelGenerationRule {
                     }
 
                     // join relationship plan
-                    let (join_plan, _) =
+                    let join_plan =
                         model_plan
                             .relation_chain
                             .clone()
@@ -642,6 +663,8 @@ impl ModelGenerationRule {
                             .project(model_plan.required_exprs.clone())?
                             .build()?,
                     };
+
+                    dbg!(result.clone());
 
                     let alias = LogicalPlanBuilder::from(result)
                         .alias(model.name.clone())?

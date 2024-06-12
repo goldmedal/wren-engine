@@ -143,7 +143,7 @@ pub(crate) fn create_expr_for_model(
     model: Arc<Model>,
     context_provider: DynamicContextProvider,
 ) -> Expr {
-    let wrapped = format!("select {} from {}", expr, &model.name);
+    let wrapped = format!("select {} from {}", expr, &model.table_reference);
     let parsed = Parser::parse_sql(&GenericDialect {}, &wrapped).unwrap();
     let statement = &parsed[0];
 
