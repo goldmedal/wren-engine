@@ -9,6 +9,7 @@ use datafusion::sql::sqlparser::ast::Expr::{CompoundIdentifier, Identifier};
 use datafusion::sql::sqlparser::ast::{visit_expressions, visit_expressions_mut};
 use datafusion::sql::sqlparser::dialect::GenericDialect;
 use datafusion::sql::sqlparser::parser::Parser;
+use log::debug;
 use petgraph::algo::is_cyclic_directed;
 use petgraph::{EdgeType, Graph};
 
@@ -102,7 +103,7 @@ pub fn create_wren_calculated_field_expr(
         }
         ControlFlow::<()>::Continue(())
     });
-    println!("Statement: {:?}", statement.to_string());
+    debug!("Statement: {:?}", statement.to_string());
     let context_provider = WrenContextProvider::new(&analyzed_wren_mdl.wren_mdl);
     let sql_to_rel = SqlToRel::new(&context_provider);
     let plan = match sql_to_rel.sql_statement_to_plan(statement.clone()) {
