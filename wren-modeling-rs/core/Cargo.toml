@@ -22,3 +22,4 @@ petgraph-evcxr = "*"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+env_logger = "0.11.3"

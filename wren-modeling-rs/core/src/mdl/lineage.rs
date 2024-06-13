@@ -177,9 +177,6 @@ impl Lineage {
                                                 right_vertex,
                                                 get_dataset_link_revers_if_need(
                                                     column_ref.dataset.clone(),
-                                                    Dataset::Model(Arc::clone(
-                                                        &related_model,
-                                                    )),
                                                     rs_rf,
                                                 ),
                                             );
@@ -244,22 +241,13 @@ struct RequiredInfo {
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct DatasetLink {
-    pub source: Dataset,
-    pub target: Dataset,
     pub join_type: JoinType,
     pub condition: String,
 }
 
 impl DatasetLink {
-    fn new(
-        source: Dataset,
-        target: Dataset,
-        join_type: JoinType,
-        condition: String,
-    ) -> Self {
+    fn new(join_type: JoinType, condition: String) -> Self {
         DatasetLink {
-            source,
-            target,
             join_type,
             condition,
         }
@@ -268,7 +256,6 @@ impl DatasetLink {
 
 fn get_dataset_link_revers_if_need(
     source: Dataset,
-    target: Dataset,
     rs: Arc<Relationship>,
 ) -> DatasetLink {
     let join_type = if rs.models[0] == source.name() {
@@ -280,7 +267,7 @@ fn get_dataset_link_revers_if_need(
             _ => rs.join_type,
         }
     };
-    DatasetLink::new(source, target, join_type, rs.condition.clone())
+    DatasetLink::new(join_type, rs.condition.clone())
 }
 
 #[cfg(test)]

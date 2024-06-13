@@ -9,7 +9,6 @@ use datafusion::sql::sqlparser::ast::Expr::{CompoundIdentifier, Identifier};
 use datafusion::sql::sqlparser::ast::{visit_expressions, visit_expressions_mut};
 use datafusion::sql::sqlparser::dialect::GenericDialect;
 use datafusion::sql::sqlparser::parser::Parser;
-use log::debug;
 use petgraph::algo::is_cyclic_directed;
 use petgraph::{EdgeType, Graph};
 
@@ -81,7 +80,7 @@ pub fn create_wren_calculated_field_expr(
         .iter()
         .map(|c| &c.relation)
         .filter(|r| r.is_some())
-        .map(|r| r.clone().unwrap().to_string())
+        .map(|r| r.clone().unwrap().table().to_string())
         .collect::<BTreeSet<_>>() // Collect into a BTreeSet to remove duplicates
         .into_iter() // Convert BTreeSet back into an iterator
         .map(|m| m.to_string())
@@ -97,14 +96,14 @@ pub fn create_wren_calculated_field_expr(
         if let CompoundIdentifier(ids) = expr {
             let name_size = ids.len();
             if name_size > 2 {
-                let slice = &ids[name_size - 2..name_size - 1];
+                let slice = &ids[name_size - 2..name_size];
                 *expr = CompoundIdentifier(slice.to_vec());
             }
         }
         ControlFlow::<()>::Continue(())
     });
-    debug!("Statement: {:?}", statement.to_string());
-    let context_provider = WrenContextProvider::new(&analyzed_wren_mdl.wren_mdl);
+    println!("Statement: {:?}", statement.to_string());
+    let context_provider = WrenContextProvider::new_bare(&analyzed_wren_mdl.wren_mdl);
     let sql_to_rel = SqlToRel::new(&context_provider);
     let plan = match sql_to_rel.sql_statement_to_plan(statement.clone()) {
         Ok(plan) => plan,
@@ -112,13 +111,7 @@ pub fn create_wren_calculated_field_expr(
     };
 
     match plan {
-        LogicalPlan::Projection(projection) => {
-            datafusion::logical_expr::utils::expr_as_column_expr(
-                &projection.expr[0],
-                &projection.input,
-            )
-            .unwrap_or_else(|_| panic!("Failed to create column expression {}", expr))
-        }
+        LogicalPlan::Projection(projection) => projection.expr[0].clone(),
         _ => unreachable!("Unexpected plan type: {:?}", plan),
     }
 }
@@ -138,6 +131,37 @@ pub(crate) fn create_remote_expr_for_model(
     )
 }
 
+/// Create the Logical Expr for the remote column.
+/// Use [RemoteContextProvider] to provide the context for the remote column.
+pub(crate) fn create_wren_expr_for_model(
+    expr: &String,
+    model: Arc<Model>,
+    analyzed_wren_mdl: Arc<AnalyzedWrenMDL>,
+) -> Expr {
+    let context_provider = WrenContextProvider::new(&analyzed_wren_mdl.wren_mdl);
+    let wrapped = format!(
+        "select {} from {}.{}.{}",
+        expr,
+        analyzed_wren_mdl.wren_mdl().catalog(),
+        analyzed_wren_mdl.wren_mdl().schema(),
+        &model.name
+    );
+    let parsed = Parser::parse_sql(&GenericDialect {}, &wrapped).unwrap();
+    let statement = &parsed[0];
+    println!("Statement: {:?}", statement.to_string());
+
+    let sql_to_rel = SqlToRel::new(&context_provider);
+    let plan = match sql_to_rel.sql_statement_to_plan(statement.clone()) {
+        Ok(plan) => plan,
+        Err(e) => panic!("Error creating plan: {}", e),
+    };
+
+    match plan {
+        LogicalPlan::Projection(projection) => projection.expr[0].clone(),
+        _ => unreachable!("Unexpected plan type: {:?}", plan),
+    }
+}
+
 /// Create the Logical Expr for the column belong to the model according to the context provider
 pub(crate) fn create_expr_for_model(
     expr: &String,
@@ -155,13 +179,7 @@ pub(crate) fn create_expr_for_model(
     };
 
     match plan {
-        LogicalPlan::Projection(projection) => {
-            datafusion::logical_expr::utils::expr_as_column_expr(
-                &projection.expr[0],
-                &projection.input,
-            )
-            .unwrap_or_else(|_| panic!("Failed to create column expression {}", expr))
-        }
+        LogicalPlan::Projection(projection) => projection.expr[0].clone(),
         _ => unreachable!("Unexpected plan type: {:?}", plan),
     }
 }

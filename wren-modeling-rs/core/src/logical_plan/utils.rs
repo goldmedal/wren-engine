@@ -41,7 +41,7 @@ pub fn create_remote_table_source(model: &Model, mdl: &WrenMDL) -> Arc<dyn Table
         Arc::new(DefaultTableSource::new(table_provider))
     } else {
         let fields: Vec<Field> = model
-            .columns
+            .get_physical_columns()
             .iter()
             .map(|column| {
                 let column = Arc::clone(column);
@@ -51,7 +51,7 @@ pub fn create_remote_table_source(model: &Model, mdl: &WrenMDL) -> Arc<dyn Table
                     column.name.clone()
                 };
                 // We don't know the data type of the remote table, so we just mock a Int32 type here
-                Field::new(name, DataType::Int32, column.no_null)
+                Field::new(name, DataType::Int8, column.no_null)
             })
             .collect();
 

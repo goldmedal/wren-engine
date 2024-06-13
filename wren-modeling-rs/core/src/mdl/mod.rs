@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use datafusion::optimizer::OptimizerContext;
 use datafusion::{
     config::ConfigOptions,
     error::DataFusionError,
@@ -14,11 +15,12 @@ use log::{debug, info};
 
 use manifest::Relationship;
 
+use crate::logical_plan::analyze::rule::RemoveWrenPrefixRule;
 use crate::logical_plan::utils::from_qualified_name_str;
 use crate::{
     logical_plan::{
+        analyze::rule::{ModelAnalyzeRule, ModelGenerationRule},
         context_provider::WrenContextProvider,
-        rule::{ModelAnalyzeRule, ModelGenerationRule},
     },
     mdl::manifest::{Column, Manifest, Metric, Model},
 };
@@ -30,13 +32,13 @@ pub mod utils;
 
 pub struct AnalyzedWrenMDL {
     pub wren_mdl: Arc<WrenMDL>,
-    pub lineage: lineage::Lineage,
+    pub lineage: Arc<lineage::Lineage>,
 }
 
 impl AnalyzedWrenMDL {
     pub fn analyze(manifest: Manifest) -> Self {
         let wren_mdl = Arc::new(WrenMDL::new(manifest));
-        let lineage = lineage::Lineage::new(&wren_mdl);
+        let lineage = Arc::new(lineage::Lineage::new(&wren_mdl));
         AnalyzedWrenMDL { wren_mdl, lineage }
     }
 
@@ -51,8 +53,16 @@ impl AnalyzedWrenMDL {
         let lineage = lineage::Lineage::new(&wren_mdl);
         AnalyzedWrenMDL {
             wren_mdl: Arc::new(wren_mdl),
-            lineage,
+            lineage: Arc::new(lineage),
         }
+    }
+
+    pub fn wren_mdl(&self) -> Arc<WrenMDL> {
+        Arc::clone(&self.wren_mdl)
+    }
+
+    pub fn lineage(&self) -> Arc<lineage::Lineage> {
+        Arc::clone(&self.lineage)
     }
 }
 
@@ -139,6 +149,12 @@ impl WrenMDL {
         self.register_tables.get(name).cloned()
     }
 
+    pub fn get_register_tables(
+        &self,
+    ) -> &HashMap<String, Arc<dyn datafusion::datasource::TableProvider>> {
+        &self.register_tables
+    }
+
     pub fn catalog(&self) -> &str {
         &self.manifest.catalog
     }
@@ -200,6 +216,7 @@ pub fn transform_sql(
     let analyzer = Analyzer::with_rules(vec![
         Arc::new(ModelAnalyzeRule::new(Arc::clone(&analyzed_mdl))),
         Arc::new(ModelGenerationRule::new(Arc::clone(&analyzed_mdl))),
+        Arc::new(RemoveWrenPrefixRule::new(Arc::clone(&analyzed_mdl))),
     ]);
 
     let config = ConfigOptions::default();
@@ -212,6 +229,15 @@ pub fn transform_sql(
         }
     };
     debug!("wren-core final planned:\n {analyzed:?}");
+    //
+    // let analyzer = Analyzer::new();
+    // let config = ConfigOptions::default();
+    // let analyzed = analyzer.execute_and_check(analyzed, &config, |_, _| {})?;
+    //
+    // let optimizer = datafusion::optimizer::Optimizer::new();
+    // let config = OptimizerContext::default();
+    // let optimized = optimizer.optimize(analyzed, &config, |_, _| {})?;
+    //
 
     // show the planned sql
     match plan_to_sql(&analyzed) {
@@ -317,7 +343,7 @@ mod test {
             // ),
             (
                 "select customer_name from test.test.orders",
-                r#"SELECT "orders"."customer_name" FROM (SELECT "customer"."name" AS "customer_name" FROM (SELECT "customer"."c_name" AS "name", "customer"."c_orderkey" AS "custkey" FROM "customer") AS "customer" LEFT JOIN (SELECT "orders"."o_custkey" AS "custkey" FROM "orders") AS "orders" ON ("customer"."custkey" = "orders"."custkey")) AS "orders""#
+                r#"SELECT "orders"."customer_name" FROM (SELECT "customer"."name" AS "customer_name" FROM (SELECT "customer"."c_name" AS "name", "customer"."c_orderkey" AS "custkey" FROM "customer") AS "customer" LEFT JOIN (SELECT "orders"."o_custkey" AS "custkey" FROM "orders") AS "orders" ON ("customer"."custkey" = "orders"."custkey")) AS "orders""#,
             ),
             // TODO: support calculated without relationship
             // (
