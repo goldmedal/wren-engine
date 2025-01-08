@@ -111,7 +111,7 @@ async def test_query(client, manifest_str, trino: TrinoContainer):
         1,
         370,
         "O",
-        172799.49,
+        "172799.49",
         "1996-01-02",
         "1_370",
         "2024-01-01 23:59:59.000000",
@@ -391,6 +391,7 @@ async def test_metadata_list_tables(client, trino: TrinoContainer):
         "catalog": "memory",
         "schema": "default",
         "table": "orders",
+        "path": None,
     }
     assert len(table["columns"]) == 9
     column = next(filter(lambda c: c["name"] == "comment", table["columns"]))
