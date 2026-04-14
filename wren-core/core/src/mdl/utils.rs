@@ -387,6 +387,27 @@ mod tests {
     }
 
     #[test]
+    fn test_dequote_identifier() {
+        // Normal quoted identifier
+        assert_eq!(super::dequote_identifier(r#""hello""#), "hello");
+        // Unquoted passes through
+        assert_eq!(super::dequote_identifier("hello"), "hello");
+        // Empty string passes through
+        assert_eq!(super::dequote_identifier(""), "");
+        // Single `"` (len < 2) passes through instead of panicking
+        assert_eq!(super::dequote_identifier("\""), "\"");
+        // Quoted URL (the analyze_with_url_tables use case)
+        assert_eq!(
+            super::dequote_identifier(r#""file:///tmp/data.parquet""#),
+            "file:///tmp/data.parquet"
+        );
+        // Only leading quote — not stripped
+        assert_eq!(super::dequote_identifier(r#""hello"#), r#""hello"#);
+        // Only trailing quote — not stripped
+        assert_eq!(super::dequote_identifier(r#"hello""#), r#"hello""#);
+    }
+
+    #[test]
     fn test_create_remote_expr_for_model() -> Result<()> {
         let test_data: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "tests", "data", "mdl.json"]
